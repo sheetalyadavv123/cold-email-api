@@ -1,6 +1,6 @@
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, ".env") });
-const express = require("express");
+const rateLimit = require("express-rate-limit");
 const cors = require("cors");
 
 const app = express();
@@ -13,6 +13,13 @@ app.use(cors({
   ]
 }));
 app.use(express.json());
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: "Too many requests. Please wait 15 minutes and try again." }
+});
+
+app.use("/api/generate-email", limiter);
 
 // ─── HEALTH CHECK ───
 app.get("/", (req, res) => {
