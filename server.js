@@ -6,7 +6,7 @@ require("dotenv").config({ path: path.join(__dirname, ".env") });
 const rateLimit = require("express-rate-limit");
 const cors = require("cors");
 
-const app = express();
+const app = require("express");
 const PORT = 5000;
 
 app.use(cors({
@@ -147,6 +147,6 @@ Make it feel human, specific, and compelling. Avoid clichés. Reference the comp
 
 app.listen(PORT, () => {
   console.log(`\n✦ Cold Email API running at http://localhost:${PORT}`);
-  console.log(`✦ Using Groq — llama3-8b-8192`);
+  console.log(`✦ Using Groq — llama-3.3-70b-versatile`);
   console.log(`✦ Health check: http://localhost:${PORT}/\n`);
 });
