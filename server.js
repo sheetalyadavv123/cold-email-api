@@ -4,65 +4,83 @@ const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
-
+ 
 const app = express();
-const PORT = process.env.PORT || 8080; 
-
-// --- CORS CONFIGURATION ---
+const PORT = process.env.PORT || 8080;
+ 
+// ─── CORS ───
 app.use(cors({
   origin: [
     "http://localhost:3000",
     "https://craftmail-ai.vercel.app",
-    /\.vercel\.app$/ 
+    /\.vercel\.app$/
   ],
   credentials: true
 }));
-
+ 
 app.use(express.json());
 app.use(morgan("dev"));
-
+ 
+// ─── LOGGER ───
 const log = {
   info: (msg, data = "") => console.log(`[${new Date().toISOString()}] ✦ INFO  ${msg}`, data),
   error: (msg, data = "") => console.error(`[${new Date().toISOString()}] ✦ ERROR ${msg}`, data),
   success: (msg, data = "") => console.log(`[${new Date().toISOString()}] ✦ OK    ${msg}`, data),
 };
-
+ 
+// ─── RATE LIMITER ───
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: { error: "Too many requests. Please wait 15 minutes and try again." }
 });
-
+ 
 app.use("/api/generate-email", limiter);
-
-// HEALTH CHECK
+ 
+// ─── HEALTH CHECK ───
 app.get("/", (req, res) => {
   res.json({ status: "ok", message: "Cold Email API is running on Groq 🚀" });
 });
-
-// GENERATE EMAIL
+ 
+// ─── GENERATE EMAIL ───
 app.post("/api/generate-email", async (req, res) => {
   const {
     yourName, yourRole, company, targetRole,
     companyAbout, uniqueValue, tone, length,
   } = req.body;
-
+ 
   if (!company || !targetRole) {
     log.error("Missing required fields", { company, targetRole });
     return res.status(400).json({ error: "Company and Target Role are required." });
   }
-
+ 
   log.info(`Generating email`, `${targetRole} @ ${company} | tone: ${tone}`);
-
+ 
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
-
+ 
   if (!GROQ_API_KEY) {
     log.error("GROQ_API_KEY is missing from environment variables");
     return res.status(500).json({ error: "Server configuration error: Missing API Key" });
   }
-
-  const prompt = `Write a cold email for ${targetRole} at ${company}...`; // (Kept your prompt logic)
-
+ 
+  const prompt = `
+You are an elite career strategist and copywriter. Write a cold email for a job application.
+ 
+Sender: ${yourName || "the applicant"}, applying for ${targetRole} at ${company}.
+Their background/role: ${yourRole || "a developer"}.
+What makes them unique: ${uniqueValue || "strong technical skills and passion for the role"}.
+About the company: ${companyAbout || "a leading company in its space"}.
+Tone: ${tone || "Professional"}.
+Length: ${length || "Medium (250 words)"}.
+ 
+Format your response EXACTLY like this:
+Subject: [compelling subject line]
+ 
+[email body — no markdown, no asterisks, plain text only, naturally structured paragraphs]
+ 
+Make it feel human, specific, and compelling. Avoid clichés. Reference the company genuinely.
+`.trim();
+ 
   try {
     const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
@@ -78,27 +96,32 @@ app.post("/api/generate-email", async (req, res) => {
         stream: true,
       }),
     });
-
+ 
     if (!groqRes.ok) {
       const errText = await groqRes.text();
       log.error(`Groq API failed`, `status: ${groqRes.status} | ${errText}`);
-      return res.status(500).json({ error: "Groq API error" });
+      return res.status(500).json({ error: "Groq API error: " + errText });
     }
-
+ 
+    // ─── SSE HEADERS ───
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
-
+    res.flushHeaders();
+ 
+    // ─── STREAM GROQ → CLIENT ───
     const reader = groqRes.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-
+ 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+ 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop();
+ 
       for (const line of lines) {
         if (!line.startsWith("data: ")) continue;
         const data = line.slice(6).trim();
@@ -110,19 +133,22 @@ app.post("/api/generate-email", async (req, res) => {
         } catch {}
       }
     }
-
+ 
     res.write("data: [DONE]\n\n");
     log.success(`Email generated`, `${targetRole} @ ${company}`);
     res.end();
-
+ 
   } catch (err) {
     log.error("Server error", err.message);
-    if (!res.headersSent) res.status(500).json({ error: err.message });
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Something went wrong: " + err.message });
+    }
   }
 });
-
-// --- SINGLE PORT BINDING ---
+ 
+// ─── START SERVER ───
 app.listen(PORT, "0.0.0.0", () => {
   log.info(`API is live on port ${PORT}`);
-  log.info(`Accepting requests from Vercel and Localhost`);
+  log.info(`Environment: ${process.env.NODE_ENV || "development"}`);
 });
+ 
