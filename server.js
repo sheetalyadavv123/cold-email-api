@@ -6,16 +6,12 @@ const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
 
 const app = express();
-const PORT = process.env.PORT || 8080;
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+const PORT = process.env.PORT || 3001;
 
 app.use(cors({
   origin: [
     "http://localhost:3000",
-    "https://cold-email-generator-livid.vercel.app"
+    "https://craftmail-ai.vercel.app"
   ]
 }));
 app.use(express.json());
