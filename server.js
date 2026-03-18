@@ -1,5 +1,8 @@
+const morgan = require("morgan");
+
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, ".env") });
+
 const rateLimit = require("express-rate-limit");
 const cors = require("cors");
 
@@ -13,6 +16,16 @@ app.use(cors({
   ]
 }));
 app.use(express.json());
+
+app.use(morgan("dev"));
+
+const log = {
+  info: (msg, data = "") => console.log(`[${new Date().toISOString()}] ✦ INFO  ${msg}`, data),
+  error: (msg, data = "") => console.error(`[${new Date().toISOString()}] ✦ ERROR ${msg}`, data),
+  success: (msg, data = "") => console.log(`[${new Date().toISOString()}] ✦ OK    ${msg}`, data),
+};
+
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -21,12 +34,12 @@ const limiter = rateLimit({
 
 app.use("/api/generate-email", limiter);
 
-// ─── HEALTH CHECK ───
+// HEALTH CHECK
 app.get("/", (req, res) => {
   res.json({ status: "ok", message: "Cold Email API is running on Groq 🚀" });
 });
 
-// ─── GENERATE EMAIL ───
+// GENERATE EMAIL
 app.post("/api/generate-email", async (req, res) => {
   const {
     yourName, yourRole, company, targetRole,
@@ -34,8 +47,12 @@ app.post("/api/generate-email", async (req, res) => {
   } = req.body;
 
   if (!company || !targetRole) {
-    return res.status(400).json({ error: "Company and Target Role are required." });
+  log.error("Missing required fields", { company, targetRole });
+  return res.status(400).json({ error: "Company and Target Role are required." });
   }
+
+log.info(`Generating email`, `${targetRole} @ ${company} | tone: ${tone}`);
+
 
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
@@ -78,11 +95,10 @@ Make it feel human, specific, and compelling. Avoid clichés. Reference the comp
     });
 
     if (!groqRes.ok) {
-      const errText = await groqRes.text();
-      console.error("Groq error status:", groqRes.status);
-      console.error("Groq error body:", errText);
-      return res.status(500).json({ error: errText });
-    }
+       const errText = await groqRes.text();
+       log.error(`Groq API failed`, `status: ${groqRes.status} | ${errText}`);
+       return res.status(500).json({ error: errText });
+    }     
 
     // Set SSE headers
     res.setHeader("Content-Type", "text/event-stream");
@@ -118,14 +134,15 @@ Make it feel human, specific, and compelling. Avoid clichés. Reference the comp
     }
 
     res.write("data: [DONE]\n\n");
-    res.end();
+    log.success(`Email generated`, `${targetRole} @ ${company}`);
+    res.end();        
 
   } catch (err) {
-    console.error("Server error:", err);
-    if (!res.headersSent) {
-      res.status(500).json({ error: "Something went wrong: " + err.message });
-    }
+  log.error("Server error", err.message);
+  if (!res.headersSent) {
+    res.status(500).json({ error: "Something went wrong: " + err.message });
   }
+}
 });
 
 app.listen(PORT, () => {
